@@ -382,6 +382,17 @@ class Helper
         $config['path'] = $settings['path'] ?? '';
         $config['host'] = $settings['host'] ?? '';
         $config['mode'] = $settings['mode'] ?? 'auto';
-        $config['extra'] = isset($settings['extra']) ? json_encode($settings['extra'], JSON_UNESCAPED_SLASHES) : null;
+        $config['mode'] = $settings['mode'] ?? 'auto';
+    
+        if (isset($settings['extra'])) {
+            if (isset($settings['extra']['downloadSettings']['realitySettings']['show'])) {
+                $showValue = $settings['extra']['downloadSettings']['realitySettings']['show'];
+                $settings['extra']['downloadSettings']['realitySettings']['show'] = filter_var($showValue, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            }
+    
+            $config['extra'] = json_encode($settings['extra'], JSON_UNESCAPED_SLASHES | JSON_NUMERIC_CHECK);
+        } else {
+            $config['extra'] = null;
+        }
     }
 }
