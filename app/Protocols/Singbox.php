@@ -7,7 +7,7 @@ use App\Utils\Helper;
 
 class Singbox
 {
-    public $flag = 'sing-box';
+    public $flag = 'sing';
     private $servers;
     private $user;
     private $config;
@@ -25,10 +25,14 @@ class Singbox
         $proxies = $this->buildProxies();
         $outbounds = $this->addProxies($proxies);
         $this->config['outbounds'] = $outbounds;
+        $user = $this->user;
 
         return response(json_encode($this->config, JSON_UNESCAPED_SLASHES), 200)
             ->header('Content-Type', 'application/json')
-            ->header('content-disposition', 'attachment;filename*=UTF-8\'\'' . rawurlencode($appName));
+            ->header('subscription-userinfo', "upload={$user['u']}; download={$user['d']}; total={$user['transfer_enable']}; expire={$user['expired_at']}")
+            ->header('profile-update-interval', '24')
+            ->header('Profile-Title', 'base64:' . base64_encode($appName))
+            ->header('Content-Disposition', 'attachment; filename="' . $appName . '"');
     }
 
     protected function loadConfig()
@@ -73,7 +77,7 @@ class Singbox
     protected function addProxies($proxies)
     {
         foreach ($this->config['outbounds'] as &$outbound) {
-            if (($outbound['type'] === 'selector' && $outbound['tag'] === '节点选择') || ($outbound['type'] === 'urltest' && $outbound['tag'] === '自动选择')) {
+            if (($outbound['type'] === 'selector' && $outbound['tag'] === '节点选择') || ($outbound['type'] === 'urltest' && $outbound['tag'] === '自动选择') || ($outbound['type'] === 'selector' && strpos($outbound['tag'], '#') === 0 )) {
                 array_push($outbound['outbounds'], ...array_column($proxies, 'tag'));
             }
         }
@@ -97,6 +101,7 @@ class Singbox
         $array['server_port'] = $server['port'];
         $array['method'] = $server['cipher'];
         $array['password'] = $password;
+        $array['domain_resolver'] = 'local';
 
         return $array;
     }
@@ -113,6 +118,7 @@ class Singbox
         $array['security'] = 'auto';
         $array['alter_id'] = 0;
         $array['transport']= [];
+        $array['domain_resolver'] = 'local';
 
         if ($server['tls']) {
             $tlsConfig = [];
@@ -138,6 +144,9 @@ class Singbox
                 if (isset($wsSettings['headers']['Host']) && !empty($wsSettings['headers']['Host'])) $array['transport']['headers'] = ['Host' => array($wsSettings['headers']['Host'])];
                 $array['transport']['max_early_data'] = 2048;
                 $array['transport']['early_data_header_name'] = 'Sec-WebSocket-Protocol';
+                if (isset($wsSettings['security'])) {
+                    $array['security'] = $wsSettings['security'];
+                }
             }
         }
         if ($server['network'] === 'grpc') {
@@ -159,6 +168,7 @@ class Singbox
             "server" => $server['host'],
             "server_port" => $server['port'],
             "uuid" => $password,
+            "domain_resolver" => "local",
             "packet_encoding" => "xudp"
         ];
 
@@ -211,14 +221,6 @@ class Singbox
                 if (isset($grpcSettings['serviceName'])) $array['transport']['service_name'] = $grpcSettings['serviceName'];
             }
         }
-        if ($server['network'] === 'h2') {
-            $array['transport']['type'] = 'http';
-            if ($server['network_settings']) {
-                $h2Settings = $server['network_settings'];
-                if (isset($h2Settings['host'])) $array['transport']['host'] = array($h2Settings['host']);
-                if (isset($h2Settings['path'])) $array['transport']['path'] = $h2Settings['path'];
-            }
-        }
 
         return $array;
     }
@@ -231,6 +233,7 @@ class Singbox
         $array['server'] = $server['host'];
         $array['server_port'] = $server['port'];
         $array['password'] = $password;
+        $array['domain_resolver'] = 'local';
 
         $array['tls'] = [
             'enabled' => true,
@@ -272,8 +275,10 @@ class Singbox
         }
 
         $array = [
+            'tag' => $server['name'],
             'server' => $server['host'],
             'server_port' => (int)$firstPort,
+            'domain_resolver' => 'local',
             'tls' => [
                 'enabled' => true,
                 'insecure' => $server['insecure'] ? true : false,
@@ -283,7 +288,6 @@ class Singbox
 
         if (is_null($server['version']) || $server['version'] == 1) {
             $array['auth_str'] = $password;
-            $array['tag'] = $server['name'];
             $array['type'] = 'hysteria';
             $array['up_mbps'] = $user->speed_limit ? min($server['down_mbps'], $user->speed_limit) : $server['down_mbps'];
             $array['down_mbps'] = $user->speed_limit ? min($server['up_mbps'], $user->speed_limit) : $server['up_mbps'];
@@ -295,7 +299,6 @@ class Singbox
 
         } elseif ($server['version'] == 2) {
             $array['password'] = $password;
-            $array['tag'] = $server['name'];
             $array['type'] = 'hysteria2';
             $array['password'] = $password;
 

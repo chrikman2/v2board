@@ -13,6 +13,7 @@ use App\Models\Plan;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Services\AuthService;
+use App\Services\OrderService;
 use App\Services\UserService;
 use App\Utils\CacheKey;
 use App\Utils\Helper;
@@ -96,7 +97,7 @@ class UserController extends Controller
                 abort(500, __('The user does not exist'));
             }
             $giftcard_input = $request->giftcard;
-            $giftcard = Giftcard::where('code', $giftcard_input)->first();;
+            $giftcard = Giftcard::where('code', $giftcard_input)->first();
 
             if (!$giftcard) {
                 abort(500, __('The gift card does not exist'));
@@ -147,6 +148,28 @@ class UserController extends Controller
                 case 3:
                     $user->transfer_enable += $giftcard->value * 1073741824;
                     break;
+                case 4:
+                    $user->u = 0;
+                    $user->d = 0;
+                    break;
+                case 5:
+                    if ($user->plan_id == null || ($user->expired_at !== null && $user->expired_at < $currentTime)) {
+                        $plan = Plan::where('id', $giftcard->plan_id)->first();
+                        $user->plan_id = $plan->id;
+                        $user->group_id = $plan->group_id;
+                        $user->transfer_enable = $plan->transfer_enable * 1073741824;
+                        $user->device_limit = $plan->device_limit;
+                        $user->u = 0;
+                        $user->d = 0;
+                        if($giftcard->value == 0) {
+                            $user->expired_at = null;
+                        } else {
+                            $user->expired_at = $currentTime + $giftcard->value * 86400;
+                        }
+                    } else {
+                        abort(500, __('Not suitable gift card type'));
+                    }
+                    break;
                 default:
                     abort(500, __('Unknown gift card type'));
             }
@@ -182,6 +205,7 @@ class UserController extends Controller
                 'last_login_at',
                 'created_at',
                 'banned',
+                'auto_renewal',
                 'remind_expire',
                 'remind_traffic',
                 'expired_at',
@@ -281,6 +305,7 @@ class UserController extends Controller
     public function update(UserUpdate $request)
     {
         $updateData = $request->only([
+            'auto_renewal',
             'remind_expire',
             'remind_traffic'
         ]);
@@ -309,11 +334,28 @@ class UserController extends Controller
         if ($request->input('transfer_amount') > $user->commission_balance) {
             abort(500, __('Insufficient commission balance'));
         }
+        DB::beginTransaction();
+        $order = new Order();
+        $orderService = new OrderService($order);
+        $order->user_id = $request->user['id'];
+        $order->plan_id = 0;
+        $order->period = 'deposit';
+        $order->trade_no = Helper::generateOrderNo();
+        $order->total_amount = $request->input('transfer_amount');
+
+        $orderService->setOrderType($user);
+        $orderService->setInvite($user);
+
         $user->commission_balance = $user->commission_balance - $request->input('transfer_amount');
         $user->balance = $user->balance + $request->input('transfer_amount');
-        if (!$user->save()) {
+        $order->status = 3;
+        if (!$order->save()||!$user->save()) {
+            DB::rollback();
             abort(500, __('Transfer failed'));
         }
+
+        DB::commit();
+
         return response([
             'data' => true
         ]);

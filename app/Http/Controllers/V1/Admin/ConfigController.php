@@ -57,7 +57,7 @@ class ConfigController extends Controller
 
     public function setTelegramWebhook(Request $request)
     {
-        $hookUrl = url('/api/v1/guest/telegram/webhook?access_token=' . md5(config('v2board.telegram_bot_token', $request->input('telegram_bot_token'))));
+        $hookUrl = secure_url('/api/v1/guest/telegram/webhook?access_token=' . md5(config('v2board.telegram_bot_token', $request->input('telegram_bot_token'))));
         $telegramService = new TelegramService($request->input('telegram_bot_token'));
         $telegramService->getMe();
         $telegramService->setWebhook($hookUrl);
@@ -70,6 +70,12 @@ class ConfigController extends Controller
     {
         $key = $request->input('key');
         $data = [
+            'ticket' => [
+                'ticket_status' => config('v2board.ticket_status', 0)
+            ],
+            'deposit' => [
+                'deposit_bounus' => config('v2board.deposit_bounus', [])
+            ],
             'invite' => [
                 'invite_force' => (int)config('v2board.invite_force', 0),
                 'invite_commission' => config('v2board.invite_commission', 10),
